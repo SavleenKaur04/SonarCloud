@@ -1,0 +1,90 @@
+name: SonarCloud PR Analysis & AI PR Reviewer
+
+on:
+  workflow_dispatch: 
+  pull_request:
+    branches:
+      - main  # Analyze PRs targeting main
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  sonarcloud: 
+    name: Run SonarCloud Analysis
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Ensures full Git history for SonarCloud
+
+      - name: Set up JDK
+        uses: actions/setup-java@v3
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Cache Maven packages
+        uses: actions/cache@v3
+        with:
+          path: ~/.m2
+          key: maven-${{ hashFiles('**/pom.xml') }}
+          restore-keys: maven-
+
+      - name: Run SonarCloud Analysis
+        run: mvn sonar:sonar -D"sonar.organization=savleenkaur04" -D"sonar.projectKey=SavleenKaur04_SonarDemo2" -D"sonar.host.url=https://sonarcloud.io" -D"sonar.pullrequest.key=${{ github.event.pull_request.number }}" -D"sonar.pullrequest.branch=${{ github.head_ref }}" -D"sonar.pullrequest.base=${{ github.base_ref }}" -D"sonar.qualitygate.wait||true"
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+
+  fetch-sonar-issues:
+    name: Fetch SonarCloud Issues & Post Inline Comments
+    needs: sonarcloud
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Fetch SonarCloud Issues
+        run: |
+          PR_KEY=${{ github.event.pull_request.number }}
+          PROJECT_KEY=SavleenKaur04_SonarDemo2
+          SONAR_TOKEN="${{ secrets.SONAR_TOKEN }}"
+          API_URL="https://sonarcloud.io/api/issues/search?componentKeys=${PROJECT_KEY}&pullRequest=${PR_KEY}"
+
+          echo "Fetching SonarCloud issues from: $API_URL"
+
+          # Save API response correctly
+          curl -s -u ${SONAR_TOKEN}: "${API_URL}" -o sonar_issues.json
+
+          #  Ensure JSON file is not empty
+          if [ ! -s sonar_issues.json ]; then
+            echo "❌ No issues found. Exiting."
+            exit 0
+          fi
+
+          echo " SonarCloud issues saved successfully."
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+
+      - name: Install Dependencies
+        run: pip install requests
+
+      - name: Dump GitHub context
+        env:
+          GITHUB_CONTEXT: ${{ toJson(github) }}
+        run: echo "$GITHUB_CONTEXT"
+
+      - name: Post SonarCloud Issues as PR Comments (Python)
+        env:
+          GITHUB_TOKEN: ${{ secrets.INLINE_COMMENT }}
+          GITHUB_REPO: ${{ github.repository }}
+          PR_HASH: ${{ github.event.pull_request.head.sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: python post_comments.py
