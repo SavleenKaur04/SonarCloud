@@ -3,7 +3,7 @@ package com.savleen;
 public class Main {
     public static void main(String[] args) {
         System.out.println("SonarCloud Implementation");
-        int x=678; 
+        int x=678;  
     } 
     public void myMethod(int value){
         switch(value){
